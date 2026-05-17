@@ -58,10 +58,11 @@ export function useEventStream(opts?: Options): Result {
         try {
           const parsed = JSON.parse(e.data) as NormalizedEvent;
           setEvents((prev) => {
-            const next = [...prev, parsed];
-            if (next.length > max) {
-              return next.slice(next.length - max);
+            for (let i = prev.length - 1; i >= 0 && i >= prev.length - 64; i--) {
+              if (prev[i]?.id === parsed.id) return prev;
             }
+            const next = prev.length >= max ? prev.slice(prev.length - max + 1) : prev.slice();
+            next.push(parsed);
             return next;
           });
         } catch {

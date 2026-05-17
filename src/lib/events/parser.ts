@@ -20,6 +20,15 @@ function logSchemaMismatch(type: string, msg: string): void {
   }
 }
 
+function hashString(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
 function safeStringify(value: Json): string {
   try {
     if (typeof value === "string") return value;
@@ -266,6 +275,8 @@ function normalizeMeta(
     sourceUuid: typeof raw.uuid === "string" ? raw.uuid : undefined,
   };
 
+  const disambig = base.sourceUuid ?? `${timestamp}:${hashString(JSON.stringify(raw))}`;
+
   if (t === "ai-title") {
     const title =
       typeof raw.title === "string"
@@ -278,7 +289,7 @@ function normalizeMeta(
       {
         ...base,
         kind: "session_meta",
-        id: makeId(sessionId, base.sourceUuid, 0, "session_meta:title"),
+        id: makeId(sessionId, disambig, 0, "session_meta:title"),
         field: "title",
         value: title,
       },
@@ -293,7 +304,7 @@ function normalizeMeta(
       {
         ...base,
         kind: "session_meta",
-        id: makeId(sessionId, base.sourceUuid, 0, "session_meta:permission"),
+        id: makeId(sessionId, disambig, 0, "session_meta:permission"),
         field: "permission-mode",
         value: mode,
       },
