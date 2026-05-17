@@ -9,6 +9,17 @@ import { truncate } from "@/lib/utils";
 
 type Json = unknown;
 
+const loggedMismatches = new Map<string, number>();
+
+function logSchemaMismatch(type: string, msg: string): void {
+  const key = `${type}|${msg}`;
+  const n = (loggedMismatches.get(key) ?? 0) + 1;
+  loggedMismatches.set(key, n);
+  if (n === 1 || n === 10 || n === 100 || n % 1000 === 0) {
+    console.warn(`[parser] schema mismatch (${n}x) type=${type}: ${msg}`);
+  }
+}
+
 function safeStringify(value: Json): string {
   try {
     if (typeof value === "string") return value;
@@ -288,22 +299,18 @@ export function parseLine(rawLine: string): NormalizedEvent[] {
     t === "bridge-session" ||
     t === "queue-operation" ||
     t === "attachment" ||
-    t === "file-history-snapshot"
+    t === "file-history-snapshot" ||
+    t === "custom-title" ||
+    t === "agent-name" ||
+    t === "ide" ||
+    t === "user-id"
   ) {
     return [];
   }
 
   const parsed = RawLine.safeParse(json);
   if (!parsed.success) {
-    if (
-      t === "ai-title" ||
-      t === "permission-mode" ||
-      t === "user" ||
-      t === "assistant" ||
-      t === "system"
-    ) {
-      console.warn("[parser] schema mismatch for type", t, parsed.error.issues[0]?.message);
-    }
+    logSchemaMismatch(typeof t === "string" ? t : "<unknown>", parsed.error.issues[0]?.message ?? "");
     return [];
   }
 

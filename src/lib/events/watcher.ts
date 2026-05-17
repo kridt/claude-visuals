@@ -59,7 +59,7 @@ export function startWatcher(opts?: {
     inactivityTimers.set(sessionId, t);
   }
 
-  function consumeLines(state: FileState, chunk: string): void {
+  function consumeLines(state: FileState, chunk: string, markActive: boolean = true): void {
     const combined = state.partial + chunk;
     const lines = combined.split(/\r?\n/);
     const tail = lines.pop();
@@ -69,7 +69,7 @@ export function startWatcher(opts?: {
       const events = parseLine(line);
       for (const ev of events) emit(ev);
     }
-    if (lines.length > 0) bumpActivity(state.sessionId);
+    if (markActive && lines.length > 0) bumpActivity(state.sessionId);
   }
 
   async function readFrom(filepath: string, from: number): Promise<{ bytesRead: number; text: string }> {
@@ -104,14 +104,20 @@ export function startWatcher(opts?: {
     if (!filepath.endsWith(".jsonl")) return;
     const sessionId = sessionIdFromPath(filepath);
     let state = fileStates.get(filepath);
+    const isInitial = !state;
     if (!state) {
       state = { offset: 0, partial: "", sessionId };
       fileStates.set(filepath, state);
     }
+    let mtimeMs = 0;
+    try {
+      mtimeMs = (await stat(filepath)).mtimeMs;
+    } catch {}
     const { bytesRead, text } = await readFrom(filepath, state.offset);
     if (bytesRead === 0) return;
     state.offset += bytesRead;
-    consumeLines(state, text);
+    const recent = Date.now() - mtimeMs < INACTIVITY_MS;
+    consumeLines(state, text, isInitial && !recent ? false : true);
   }
 
   async function handleChange(filepath: string): Promise<void> {
@@ -154,18 +160,19 @@ export function startWatcher(opts?: {
       ignoreInitial: false,
       persistent: true,
       usePolling: platform() === "win32",
-      interval: 500,
-      binaryInterval: 1000,
-      depth: 4,
+      interval: 1500,
+      binaryInterval: 3000,
+      depth: 2,
       ignored: (p) => {
         const base = basename(p);
         if (base.startsWith(".")) return true;
         if (base === "node_modules") return true;
+        if (base === "memory") return true;
         return false;
       },
       awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50,
+        stabilityThreshold: 200,
+        pollInterval: 100,
       },
     });
 

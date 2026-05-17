@@ -42,11 +42,14 @@ const ToolResultBlock = z.object({
   is_error: z.boolean().optional(),
 });
 
-const ContentBlock = z.discriminatedUnion("type", [
+const UnknownBlock = z.object({ type: z.string() }).passthrough();
+
+const ContentBlock = z.union([
   TextBlock,
   ThinkingBlock,
   ToolUseBlock,
   ToolResultBlock,
+  UnknownBlock,
 ]);
 
 const Base = z.object({
