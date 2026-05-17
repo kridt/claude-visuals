@@ -2,12 +2,15 @@
 
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import { ModeToggle } from '@/components/warroom/panels/mode-toggle';
 
 interface Props {
   activeCount: number;
   totalCount: number;
   connected: boolean;
   onOpenPalette(): void;
+  mode?: 'bridge' | 'warroom';
+  onModeChange?: (m: 'bridge' | 'warroom') => void;
 }
 
 function Logo() {
@@ -90,6 +93,8 @@ export function TopHud({
   totalCount,
   connected,
   onOpenPalette,
+  mode,
+  onModeChange,
 }: Props) {
   const hasActive = activeCount > 0;
 
@@ -173,6 +178,9 @@ export function TopHud({
         <div className="flex items-center gap-3">
           <ConnectionPill connected={connected} />
           <Clock />
+          {mode && onModeChange ? (
+            <ModeToggle mode={mode} onChange={onModeChange} />
+          ) : null}
           <button
             type="button"
             onClick={onOpenPalette}

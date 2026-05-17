@@ -3,15 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEventStream } from '@/hooks/use-event-stream';
 import { useSessions } from '@/hooks/use-sessions';
-import { useSceneState } from '@/components/cockpit/scene/use-scene-state';
 import { SessionPalette } from '@/components/cockpit/session-palette';
 import type { NormalizedEvent, SessionSummary } from '@/lib/events/schema';
-import { BridgeLoader } from './bridge-loader';
-import { MissionControl } from './panels/mission-control';
-import { SessionRoster } from './panels/session-roster';
-import { Telemetry } from './panels/telemetry';
-import { ToolStreamStrip } from './panels/tool-stream-strip';
+import { OpsFeed } from './panels/ops-feed';
+import { Operatives } from './panels/operatives';
+import { Ticker } from './panels/ticker';
 import { TopHud } from './panels/top-hud';
+import { WarRoomLoader } from './warroom-loader';
 
 interface SessionDetailResponse {
   summary: SessionSummary;
@@ -19,11 +17,13 @@ interface SessionDetailResponse {
 }
 
 interface Props {
-  mode?: 'bridge' | 'warroom';
-  onModeChange?: (m: 'bridge' | 'warroom') => void;
+  mode: 'bridge' | 'warroom';
+  onModeChange(m: 'bridge' | 'warroom'): void;
 }
 
-export function BridgeContainer({ mode = 'bridge', onModeChange }: Props = {}) {
+const ALERT_WINDOW_MS = 60_000;
+
+export function WarRoomContainer({ mode, onModeChange }: Props) {
   const { sessions, active } = useSessions({ pollMs: 3000 });
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
     null,
@@ -101,44 +101,45 @@ export function BridgeContainer({ mode = 'bridge', onModeChange }: Props = {}) {
     return merged.slice(-500);
   }, [history, streamed, selectedSessionId]);
 
-  const selectedSession = useMemo<SessionSummary | undefined>(() => {
-    if (!selectedSessionId) return undefined;
-    return sessions.find((s) => s.sessionId === selectedSessionId);
-  }, [sessions, selectedSessionId]);
+  const alertCount = useMemo(() => {
+    const cutoff = Date.now() - ALERT_WINDOW_MS;
+    let count = 0;
+    for (const e of events) {
+      if (e.kind !== 'tool_result' || !e.isError) continue;
+      const ts = e.timestamp ? Date.parse(e.timestamp) : 0;
+      if (ts >= cutoff) count++;
+    }
+    return count;
+  }, [events]);
 
-  const sceneState = useSceneState(events);
+  const globeSessions = useMemo(
+    () =>
+      sessions.map((s) => ({
+        sessionId: s.sessionId,
+        isActive: s.isActive,
+      })),
+    [sessions],
+  );
 
   return (
-    <>
-      <BridgeLoader
-        sceneState={sceneState}
+    <div className="warroom">
+      <WarRoomLoader
+        sessions={globeSessions}
+        selectedSessionId={selectedSessionId}
         topHud={
           <TopHud
-            activeCount={active}
-            totalCount={sessions.length}
-            connected={connected}
-            onOpenPalette={() => setPaletteOpen(true)}
             mode={mode}
             onModeChange={onModeChange}
+            activeCount={active}
+            totalCount={sessions.length}
+            alertCount={alertCount}
+            connected={connected}
+            onOpenPalette={() => setPaletteOpen(true)}
           />
         }
-        leftPanel={
-          <SessionRoster
-            sessions={sessions}
-            selectedSessionId={selectedSessionId}
-            onSelectSession={setSelectedSessionId}
-          />
-        }
-        centerPanel={
-          <MissionControl
-            events={events}
-            sessionSummary={selectedSession}
-          />
-        }
-        rightPanel={
-          <Telemetry summary={selectedSession} events={events} />
-        }
-        bottomStrip={<ToolStreamStrip events={events} />}
+        leftPanel={<OpsFeed events={events} />}
+        rightPanel={<Operatives events={events} />}
+        bottomStrip={<Ticker events={events} />}
       />
 
       <SessionPalette
@@ -148,6 +149,6 @@ export function BridgeContainer({ mode = 'bridge', onModeChange }: Props = {}) {
         activeCount={active}
         onSelect={setSelectedSessionId}
       />
-    </>
+    </div>
   );
 }
