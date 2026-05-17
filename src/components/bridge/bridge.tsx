@@ -1,8 +1,13 @@
 'use client';
 
+import {
+  CameraShake,
+  ContactShadows,
+  Environment,
+  Lightformer,
+} from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
-import { type ReactNode } from 'react';
-import * as THREE from 'three';
+import { Suspense, type ReactNode } from 'react';
 import type { AgentSceneProps } from '@/components/cockpit/scene/agent-scene';
 import { AgentCoreGroup } from './scene/agent-core-group';
 import { BottomStrip } from './scene/bottom-strip';
@@ -32,12 +37,13 @@ export function Bridge({
   return (
     <div className="fixed inset-0 bg-[var(--color-bg)] overflow-hidden">
       <Canvas
-        dpr={[1, 1.5]}
+        dpr={[1, 2]}
         gl={{
-          alpha: false,
-          antialias: true,
+          antialias: false,
           powerPreference: 'high-performance',
+          stencil: false,
         }}
+        flat
         camera={{ position: [0, 1.6, 0], fov: 55, near: 0.1, far: 50 }}
         style={{
           position: 'absolute',
@@ -45,18 +51,62 @@ export function Bridge({
           width: '100%',
           height: '100%',
         }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.0;
-        }}
       >
-        <color attach="background" args={['#0a0814']} />
-        <fog attach="fog" args={['#0a0814', 8, 24]} />
+        <color attach="background" args={['#070512']} />
+        <fog attach="fog" args={['#070512', 10, 32]} />
 
-        <ambientLight intensity={0.2} />
-        <directionalLight position={[0, 6, -4]} intensity={0.35} color={'#b084f3'} />
+        {/* IBL — Lightformers act as area lights AND reflect in physical materials */}
+        <Environment
+          preset="night"
+          background={false}
+          environmentIntensity={0.45}
+        >
+          <Lightformer
+            form="rect"
+            intensity={3}
+            color="#88aaff"
+            position={[0, 5, -7]}
+            scale={[14, 3, 1]}
+            target={[0, 1, 0]}
+          />
+          <Lightformer
+            form="rect"
+            intensity={2.2}
+            color="#c875f5"
+            position={[-6, 2, 2]}
+            scale={[3, 5, 1]}
+            target={[0, 1, 0]}
+          />
+          <Lightformer
+            form="rect"
+            intensity={2.2}
+            color="#5cc8ff"
+            position={[6, 2, 2]}
+            scale={[3, 5, 1]}
+            target={[0, 1, 0]}
+          />
+          <Lightformer
+            form="ring"
+            intensity={4}
+            color="#ffffff"
+            position={[0, 6, 0]}
+            scale={2}
+            target={[0, 1, 0]}
+          />
+        </Environment>
+        <ambientLight intensity={0.08} color="#b084f3" />
 
         <CameraRig />
+        <CameraShake
+          maxYaw={0.005}
+          maxPitch={0.005}
+          maxRoll={0.005}
+          yawFrequency={0.4}
+          pitchFrequency={0.4}
+          rollFrequency={0.2}
+          intensity={0.7}
+          decayRate={0.65}
+        />
 
         <StarField />
         <FloorGrid />
@@ -108,7 +158,20 @@ export function Bridge({
           scale={0.32}
         />
 
-        <PostEffects />
+        <ContactShadows
+          position={[0, 0, -2]}
+          opacity={0.5}
+          scale={20}
+          blur={2.8}
+          far={4}
+          resolution={512}
+          color="#000814"
+          frames={1}
+        />
+
+        <Suspense fallback={null}>
+          <PostEffects />
+        </Suspense>
       </Canvas>
 
       <div

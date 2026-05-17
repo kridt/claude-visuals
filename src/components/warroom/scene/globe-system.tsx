@@ -79,7 +79,8 @@ function SessionPin({
   cameraPos: _cameraPos,
   showLabel,
 }: PinProps) {
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  const pillarMatRef = useRef<THREE.MeshPhysicalMaterial>(null);
+  const capMatRef = useRef<THREE.MeshPhysicalMaterial>(null);
   const beamMatRef = useRef<THREE.MeshBasicMaterial>(null);
 
   const { localPos, normal } = useMemo(() => {
@@ -96,28 +97,24 @@ function SessionPin({
   }, [normal]);
 
   const height = isSelected ? 0.25 : isActive ? 0.15 : 0.08;
-  const color = isSelected
-    ? '#bef0ff'
-    : isActive
-      ? '#7cd2ea'
-      : '#4d7390';
+  const isLive = isActive || isSelected;
+  const baseColor = isLive ? '#22d3ee' : '#37536a';
+  const baseEmissive = isLive ? '#22d3ee' : '#000000';
+  const baseEmissiveIntensity = isSelected ? 3.2 : isActive ? 2.5 : 0;
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    if (matRef.current && isActive && !isSelected) {
-      // Pulsing brightness on active (non-selected) pins.
-      const pulse = 0.7 + Math.sin(t * 2.4) * 0.3;
-      matRef.current.opacity = pulse;
-    } else if (matRef.current) {
-      matRef.current.opacity = isSelected ? 1.0 : 0.75;
+    if (isActive && !isSelected) {
+      // Pulse the emissive on active (non-selected) pins.
+      const pulse = 1.8 + Math.sin(t * 2.4) * 0.8;
+      if (pillarMatRef.current) pillarMatRef.current.emissiveIntensity = pulse;
+      if (capMatRef.current) capMatRef.current.emissiveIntensity = pulse;
     }
     if (beamMatRef.current && isSelected) {
-      beamMatRef.current.opacity = 0.55 + Math.sin(t * 2.0) * 0.15;
+      beamMatRef.current.opacity = 0.65 + Math.sin(t * 2.0) * 0.2;
     }
   });
 
-  // Position the pin so its base sits on the sphere surface and its
-  // pillar grows outward along the normal.
   const pillarOffset = height / 2;
   const labelOffset = height + 0.08;
 
@@ -126,20 +123,41 @@ function SessionPin({
       {/* Pillar */}
       <mesh position={[0, pillarOffset, 0]}>
         <cylinderGeometry args={[0.015, 0.025, height, 8]} />
-        <meshBasicMaterial
-          ref={matRef}
-          color={color}
-          transparent
-          opacity={isSelected ? 1.0 : 0.85}
+        <meshPhysicalMaterial
+          ref={pillarMatRef}
+          color={baseColor}
+          emissive={baseEmissive}
+          emissiveIntensity={baseEmissiveIntensity}
+          metalness={isLive ? 0.4 : 0.5}
+          roughness={isLive ? 0.3 : 0.6}
           toneMapped={false}
         />
       </mesh>
 
-      {/* Small glowing cap at the pin tip */}
+      {/* Glowing cap at the pin tip */}
       <mesh position={[0, height, 0]}>
-        <sphereGeometry args={[0.025, 8, 8]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
+        <sphereGeometry args={[0.025, 12, 12]} />
+        <meshPhysicalMaterial
+          ref={capMatRef}
+          color={baseColor}
+          emissive={baseEmissive}
+          emissiveIntensity={baseEmissiveIntensity}
+          metalness={isLive ? 0.4 : 0.5}
+          roughness={isLive ? 0.3 : 0.6}
+          toneMapped={false}
+        />
       </mesh>
+
+      {/* Surface-spill point light on the selected pin so the globe
+          locally bounces some cyan back. */}
+      {isSelected && (
+        <pointLight
+          position={[0, 0.2, 0]}
+          color={'#7cd2ea'}
+          intensity={2}
+          distance={1}
+        />
+      )}
 
       {/* Vertical light beam on the selected pin */}
       {isSelected && (
@@ -147,9 +165,9 @@ function SessionPin({
           <cylinderGeometry args={[0.015, 0.04, 3.0, 8, 1, true]} />
           <meshBasicMaterial
             ref={beamMatRef}
-            color={'#bef0ff'}
+            color={[0.7, 3, 4.5]}
             transparent
-            opacity={0.55}
+            opacity={0.65}
             depthWrite={false}
             side={THREE.DoubleSide}
             blending={THREE.AdditiveBlending}
@@ -217,37 +235,92 @@ function GreatCircles({ radius }: { radius: number }) {
     [tropic],
   );
 
+  // HDR cyan so bloom catches the great circles. Use THREE.Color so we
+  // can push channels above 1.0 — bloom keys off luminance, and a
+  // tone-mapped-off material lets the raw values reach the bloom pass.
+  const hdrCyan = useMemo(() => new THREE.Color(0.8, 3.5, 5), []);
+  const dimCyan = useMemo(() => new THREE.Color(0.4, 1.8, 2.4), []);
+
   return (
     <group>
       <Line
         points={equator}
-        color={'#7cd2ea'}
+        color={hdrCyan}
         lineWidth={1.4}
         transparent
-        opacity={0.85}
+        opacity={0.95}
+        toneMapped={false}
       />
       <Line
         points={meridian}
-        color={'#7cd2ea'}
+        color={hdrCyan}
         lineWidth={1.2}
         transparent
-        opacity={0.65}
+        opacity={0.8}
+        toneMapped={false}
       />
       <Line
         points={tropic}
-        color={'#4f8aa0'}
+        color={dimCyan}
         lineWidth={0.8}
         transparent
-        opacity={0.4}
+        opacity={0.55}
+        toneMapped={false}
       />
       <Line
         points={tropicS}
-        color={'#4f8aa0'}
+        color={dimCyan}
         lineWidth={0.8}
         transparent
-        opacity={0.4}
+        opacity={0.55}
+        toneMapped={false}
       />
     </group>
+  );
+}
+
+/**
+ * Fresnel atmosphere shell — additive cyan rim around the globe.
+ */
+const ATMO_VERT = /* glsl */ `
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vViewDir = normalize(-mv.xyz);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const ATMO_FRAG = /* glsl */ `
+  precision mediump float;
+  uniform vec3 uColor;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    float fres = pow(1.0 - max(dot(vNormal, vViewDir), 0.0), 2.5);
+    gl_FragColor = vec4(uColor, fres);
+  }
+`;
+
+function AtmosphereShell({ radius }: { radius: number }) {
+  const uniforms = useMemo(
+    () => ({ uColor: { value: new THREE.Color('#22d3ee') } }),
+    [],
+  );
+  return (
+    <mesh scale={1.06}>
+      <sphereGeometry args={[radius, 64, 64]} />
+      <shaderMaterial
+        transparent
+        depthWrite={false}
+        side={THREE.BackSide}
+        blending={THREE.AdditiveBlending}
+        vertexShader={ATMO_VERT}
+        fragmentShader={ATMO_FRAG}
+        uniforms={uniforms}
+      />
+    </mesh>
   );
 }
 
@@ -260,6 +333,15 @@ export function GlobeSystem({
   const groupRef = useRef<THREE.Group>(null);
   const cameraPosRef = useRef(new THREE.Vector3());
 
+  // Sphere geometries for the two wireframe passes. Memoize so we don't
+  // rebuild EdgesGeometry every frame.
+  const edgeGeo = useMemo(() => {
+    const sphere = new THREE.SphereGeometry(radius, 48, 48);
+    const edges = new THREE.EdgesGeometry(sphere, 12);
+    sphere.dispose();
+    return edges;
+  }, [radius]);
+
   useFrame((state, delta) => {
     cameraPosRef.current.copy(state.camera.position);
     if (groupRef.current && selectedSessionId === null) {
@@ -269,17 +351,11 @@ export function GlobeSystem({
   });
 
   // Determine which pins should show labels: the selected one plus the
-  // 3 closest-to-camera pins (in local space, before rotation). For a
-  // small N this is cheap to do on every render of the array.
+  // 3 closest-to-camera pins (in local space, before rotation).
   const labelSet = useMemo(() => {
     const set = new Set<string>();
     if (selectedSessionId) set.add(selectedSessionId);
 
-    // Cheap proximity proxy: pick the 3 pins whose local Z is largest
-    // (i.e. facing the camera in the globe's un-rotated frame). The
-    // globe rotates slowly, so this set updates with rotation only when
-    // there is no selection — and when there IS a selection, rotation
-    // is frozen, so the front-facing set is also static.
     const scored = sessions.map((s) => {
       const { lat, lon } = sessionIdToLatLon(s.sessionId);
       const { pos } = latLonToVec3(lat, lon, radius);
@@ -295,53 +371,46 @@ export function GlobeSystem({
 
   return (
     <group position={position}>
-      {/* Atmospheric glow halo — slightly larger sphere, additive. */}
-      <mesh>
-        <sphereGeometry args={[radius * 1.08, 32, 32]} />
-        <meshBasicMaterial
-          color={'#7cd2ea'}
-          transparent
-          opacity={0.06}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          side={THREE.BackSide}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[radius * 1.04, 32, 32]} />
-        <meshBasicMaterial
-          color={'#bef0ff'}
-          transparent
-          opacity={0.08}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          side={THREE.BackSide}
-          toneMapped={false}
-        />
-      </mesh>
+      {/* Fresnel atmosphere shell. */}
+      <AtmosphereShell radius={radius} />
 
-      {/* Rotating group: solid inner sphere + wireframe + great circles +
-          session pins. Everything that should rotate with the globe lives
-          in here. */}
+      {/* Rotating group: solid inner sphere + dual wireframe pass + great
+          circles + session pins. */}
       <group ref={groupRef}>
-        {/* Solid inner sphere */}
+        {/* Solid inner sphere — PBR so it picks up the lightformers. */}
         <mesh>
-          <sphereGeometry args={[radius * 0.985, 48, 32]} />
-          <meshBasicMaterial color={'#0d1a2a'} />
-        </mesh>
-
-        {/* Wireframe icosahedron skin */}
-        <mesh>
-          <icosahedronGeometry args={[radius, 4]} />
-          <meshBasicMaterial
-            color={'#3a7da0'}
-            wireframe
-            transparent
-            opacity={0.55}
-            toneMapped={false}
+          <sphereGeometry args={[radius * 0.985, 64, 64]} />
+          <meshPhysicalMaterial
+            color={'#02060e'}
+            metalness={0.6}
+            roughness={0.35}
+            clearcoat={0.8}
+            clearcoatRoughness={0.2}
+            envMapIntensity={1.0}
           />
         </mesh>
+
+        {/* Front-facing bright wireframe (HDR cyan). */}
+        <lineSegments geometry={edgeGeo}>
+          <lineBasicMaterial
+            color={[1.4, 4, 5.5]}
+            transparent
+            opacity={1}
+            toneMapped={false}
+          />
+        </lineSegments>
+
+        {/* Occluded dim wireframe — Iron-Man "see through" effect. */}
+        <lineSegments geometry={edgeGeo}>
+          <lineBasicMaterial
+            color={'#22d3ee'}
+            transparent
+            opacity={0.12}
+            depthTest={false}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </lineSegments>
 
         <GreatCircles radius={radius} />
 

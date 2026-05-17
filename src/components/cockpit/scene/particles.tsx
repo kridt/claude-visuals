@@ -1,7 +1,7 @@
 'use client';
 
-import { useFrame } from '@react-three/fiber';
 import { PointMaterial, Points } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
@@ -9,6 +9,9 @@ interface Props {
   count?: number;
   radius?: number;
 }
+
+// Multiplied past 1.0 so points punch through the bloom luminance threshold.
+const PARTICLE_HDR_COLOR = new THREE.Color(0xb084f3).multiplyScalar(1.6);
 
 export function Particles({ count = 600, radius = 8 }: Props) {
   const pointsRef = useRef<THREE.Points>(null);
@@ -77,12 +80,13 @@ export function Particles({ count = 600, radius = 8 }: Props) {
   return (
     <Points ref={pointsRef} positions={positions} stride={3}>
       <PointMaterial
-        size={0.02}
+        size={0.015}
         sizeAttenuation
         transparent
-        opacity={0.4}
+        opacity={0.55}
         depthWrite={false}
-        color={0xb084f3}
+        color={PARTICLE_HDR_COLOR}
+        toneMapped={false}
       />
     </Points>
   );

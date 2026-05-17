@@ -1,8 +1,13 @@
 'use client';
 
+import {
+  CameraShake,
+  ContactShadows,
+  Environment,
+  Lightformer,
+} from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
-import { type ReactNode } from 'react';
-import * as THREE from 'three';
+import { Suspense, type ReactNode } from 'react';
 import { CameraRig } from './scene/camera-rig';
 import { GlobeSystem, type GlobeSession } from './scene/globe-system';
 import { PostEffects } from './scene/post-effects';
@@ -34,12 +39,13 @@ export function WarRoom({
   return (
     <div className="warroom fixed inset-0 overflow-hidden">
       <Canvas
-        dpr={[1, 1.5]}
+        dpr={[1, 2]}
         gl={{
-          alpha: false,
-          antialias: true,
+          antialias: false,
           powerPreference: 'high-performance',
+          stencil: false,
         }}
+        flat
         camera={{ position: [0, 2.2, 5.5], fov: 50, near: 0.1, far: 60 }}
         style={{
           position: 'absolute',
@@ -47,21 +53,50 @@ export function WarRoom({
           width: '100%',
           height: '100%',
         }}
-        onCreated={({ gl, camera }) => {
-          gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.0;
-          camera.lookAt(0, 1.5, 0);
-        }}
       >
-        <color attach="background" args={['#070a14']} />
-        <fog attach="fog" args={['#070a14', 12, 30]} />
+        <color attach="background" args={['#040814']} />
+        <fog attach="fog" args={['#040814', 12, 34]} />
 
-        <ambientLight intensity={0.25} color={'#7cd2ea'} />
-        <directionalLight
-          position={[3, 6, 4]}
-          intensity={0.8}
-          color={'#9ad6ff'}
-        />
+        <Environment
+          preset="warehouse"
+          background={false}
+          environmentIntensity={0.35}
+        >
+          <Lightformer
+            form="rect"
+            intensity={2.5}
+            color="#7cd2ea"
+            position={[0, 6, 4]}
+            scale={[14, 4, 1]}
+            target={[0, 1.5, 0]}
+          />
+          <Lightformer
+            form="rect"
+            intensity={1.8}
+            color="#9ad6ff"
+            position={[-6, 3, 4]}
+            scale={[4, 5, 1]}
+            target={[0, 1.5, 0]}
+          />
+          <Lightformer
+            form="rect"
+            intensity={1.8}
+            color="#7cd2ea"
+            position={[6, 3, 4]}
+            scale={[4, 5, 1]}
+            target={[0, 1.5, 0]}
+          />
+          <Lightformer
+            form="ring"
+            intensity={3.5}
+            color="#ffffff"
+            position={[0, 7, 0]}
+            scale={2.5}
+            target={[0, 1.5, 0]}
+          />
+        </Environment>
+
+        <ambientLight intensity={0.08} color={'#7cd2ea'} />
 
         <StarBackdrop />
         <TacticalFloor />
@@ -108,8 +143,32 @@ export function WarRoom({
           {bottomStrip}
         </TickerStrip>
 
+        <ContactShadows
+          position={[0, 0.01, 0]}
+          opacity={0.6}
+          scale={20}
+          blur={2.5}
+          far={4}
+          resolution={512}
+          color="#000814"
+          frames={1}
+        />
+
         <CameraRig />
-        <PostEffects />
+        <CameraShake
+          maxYaw={0.003}
+          maxPitch={0.003}
+          maxRoll={0.002}
+          yawFrequency={0.35}
+          pitchFrequency={0.35}
+          rollFrequency={0.15}
+          intensity={0.5}
+          decayRate={0.7}
+        />
+
+        <Suspense fallback={null}>
+          <PostEffects />
+        </Suspense>
       </Canvas>
 
       {/* DOM-overlay top HUD above the canvas. */}

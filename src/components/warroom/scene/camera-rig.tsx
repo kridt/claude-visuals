@@ -1,17 +1,21 @@
 'use client';
 
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 
 /**
- * Surveillance-camera sway. Slow side-to-side drift around the globe so
- * the scene never feels frozen, but never distracts either.
+ * Surveillance-camera drift with mouse parallax. The damping makes the
+ * motion feel weighty and intentional rather than twitchy.
  */
 export function CameraRig() {
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    state.camera.position.x = Math.sin(t * 0.08) * 0.15;
-    state.camera.position.y = 2.2 + Math.sin(t * 0.12) * 0.05;
-    state.camera.lookAt(0, 1.5, 0);
+  const { camera, mouse } = useThree();
+  useFrame((_, dt) => {
+    const t = performance.now();
+    const targetX = mouse.x * 0.3 + Math.sin(t * 0.00012) * 0.15;
+    const targetY = 2.2 + mouse.y * 0.15 + Math.sin(t * 0.0002) * 0.05;
+    camera.position.x = THREE.MathUtils.damp(camera.position.x, targetX, 1.5, dt);
+    camera.position.y = THREE.MathUtils.damp(camera.position.y, targetY, 1.5, dt);
+    camera.lookAt(0, 1.5, 0);
   });
   return null;
 }

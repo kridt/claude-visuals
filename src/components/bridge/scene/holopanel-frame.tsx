@@ -1,6 +1,12 @@
 'use client';
 
-import { Html, Line, Text } from '@react-three/drei';
+import {
+  Html,
+  Line,
+  MeshTransmissionMaterial,
+  RoundedBox,
+  Text,
+} from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef, type ReactNode } from 'react';
 import * as THREE from 'three';
@@ -25,13 +31,11 @@ interface BracketProps {
 }
 
 function Bracket({ position, rotation, size, color }: BracketProps) {
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
-
   return (
     <group position={position} rotation={rotation}>
       <mesh position={[0, 0, 0]}>
         <boxGeometry args={[size, 0.03, 0.02]} />
-        <meshBasicMaterial ref={matRef} color={color} toneMapped={false} />
+        <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
       <mesh position={[-size / 2 + 0.015, -size / 2 + 0.015, 0]}>
         <boxGeometry args={[0.03, size, 0.02]} />
@@ -53,11 +57,14 @@ export function HolopanelFrame({
   children,
 }: HolopanelFrameProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const backplaneMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const borderTopMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const borderBotMatRef = useRef<THREE.MeshBasicMaterial>(null);
 
   const accentColor = useMemo(() => new THREE.Color(accent), [accent]);
+  const accentHex = useMemo(
+    () => `#${accent.toString(16).padStart(6, '0')}`,
+    [accent],
+  );
 
   const borderPoints = useMemo(() => {
     const hw = width / 2;
@@ -78,16 +85,8 @@ export function HolopanelFrame({
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const pulse = 0.6 + Math.sin(t * 1.2) * 0.25;
-
-    if (backplaneMatRef.current) {
-      backplaneMatRef.current.opacity = 0.32 + Math.sin(t * 0.7) * 0.03;
-    }
-    if (borderTopMatRef.current) {
-      borderTopMatRef.current.opacity = pulse;
-    }
-    if (borderBotMatRef.current) {
-      borderBotMatRef.current.opacity = pulse;
-    }
+    if (borderTopMatRef.current) borderTopMatRef.current.opacity = pulse;
+    if (borderBotMatRef.current) borderBotMatRef.current.opacity = pulse;
   });
 
   const htmlW = htmlSize?.[0] ?? 360;
@@ -95,17 +94,33 @@ export function HolopanelFrame({
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>
-      <mesh position={[0, 0, -0.02]}>
-        <planeGeometry args={[width, height]} />
-        <meshBasicMaterial
-          ref={backplaneMatRef}
-          color={'#0d0820'}
-          transparent
-          opacity={0.32}
-          depthWrite={false}
-          side={THREE.DoubleSide}
+      {/* Glass backplane — transmissionSampler reuses renderer buffer, so the */}
+      {/* three panels share one resolve target instead of allocating their own. */}
+      <RoundedBox
+        args={[width, height, 0.06]}
+        radius={0.04}
+        smoothness={4}
+        position={[0, 0, -0.04]}
+      >
+        <MeshTransmissionMaterial
+          backside
+          samples={6}
+          resolution={256}
+          transmission={1}
+          roughness={0.18}
+          thickness={0.2}
+          ior={1.25}
+          chromaticAberration={0.04}
+          anisotropicBlur={0.4}
+          distortion={0.08}
+          distortionScale={0.3}
+          temporalDistortion={0.08}
+          clearcoat={1}
+          attenuationColor={accentHex}
+          attenuationDistance={0.5}
+          transmissionSampler
         />
-      </mesh>
+      </RoundedBox>
 
       <Line
         points={borderPoints}

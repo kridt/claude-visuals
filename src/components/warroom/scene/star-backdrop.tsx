@@ -1,13 +1,14 @@
 'use client';
 
-import { Stars } from '@react-three/drei';
+import { Sparkles, Stars } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import * as THREE from 'three';
 
 /**
- * Sparse high-orbit starfield. Different from the bridge — less stars,
- * desaturated, very slow rotation so the camera doesn't feel weightless.
+ * Layered starfield: a sparse far field for distance + a denser closer
+ * field for parallax. Topped with rare cyan sparkles to suggest particles
+ * drifting in the room.
  */
 export function StarBackdrop() {
   const groupRef = useRef<THREE.Group>(null);
@@ -21,13 +22,29 @@ export function StarBackdrop() {
   return (
     <group ref={groupRef}>
       <Stars
-        radius={50}
-        depth={25}
-        count={2500}
+        radius={120}
+        depth={60}
+        count={4000}
         factor={3}
-        fade
         saturation={0}
-        speed={0.2}
+        fade
+        speed={0.25}
+      />
+      <Stars
+        radius={60}
+        depth={30}
+        count={1500}
+        factor={5}
+        saturation={0.4}
+        fade
+        speed={0.9}
+      />
+      <Sparkles
+        count={50}
+        scale={30}
+        size={2.5}
+        speed={0.12}
+        color={'#88ccff'}
       />
     </group>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { Html, Line } from '@react-three/drei';
+import { Html, Line, RoundedBox } from '@react-three/drei';
 import { useMemo, type ReactNode } from 'react';
 import * as THREE from 'three';
 
@@ -15,8 +15,9 @@ export interface TickerStripProps {
 }
 
 /**
- * Slim tilted strip at the front of the war room. Houses a scrolling
- * tool-ops ticker rendered as HTML.
+ * Slim tilted strip at the front of the war room. Chamfered backplate
+ * with a bloomed cyan top rail. Houses a scrolling tool-ops ticker
+ * rendered as HTML.
  */
 export function TickerStrip({
   position,
@@ -41,33 +42,42 @@ export function TickerStrip({
     [hw, hh],
   );
 
+  // HDR cyan for the bloom-friendly border.
+  const hdrCyan = useMemo(() => new THREE.Color(0.8, 3.5, 5), []);
+
   return (
     <group position={position} rotation={rotation}>
-      {/* Semi-opaque backplane. */}
-      <mesh position={[0, 0, -0.015]}>
-        <planeGeometry args={[width, height]} />
-        <meshBasicMaterial
-          color={'#0a1626'}
-          transparent
-          opacity={0.88}
-          depthWrite={false}
-          side={THREE.DoubleSide}
+      {/* Chamfered PBR backplate. */}
+      <RoundedBox
+        args={[width, height, 0.04]}
+        radius={0.02}
+        smoothness={3}
+        position={[0, 0, -0.025]}
+      >
+        <meshPhysicalMaterial
+          color={'#0a121e'}
+          metalness={0.7}
+          roughness={0.4}
+          clearcoat={0.6}
+          clearcoatRoughness={0.3}
+          envMapIntensity={0.8}
         />
-      </mesh>
+      </RoundedBox>
 
       {/* Thin cyan border. */}
       <Line
         points={borderPoints}
-        color={'#7cd2ea'}
+        color={hdrCyan}
         lineWidth={1.2}
         transparent
-        opacity={0.7}
+        opacity={0.85}
+        toneMapped={false}
       />
 
-      {/* Top rail — slightly brighter accent. */}
-      <mesh position={[0, hh - 0.012, -0.005]}>
+      {/* Top rail — HDR cyan accent that the post-bloom hugs. */}
+      <mesh position={[0, hh - 0.012, 0.002]}>
         <planeGeometry args={[width, 0.022]} />
-        <meshBasicMaterial color={'#7cd2ea'} toneMapped={false} />
+        <meshBasicMaterial color={[1, 5, 7]} toneMapped={false} />
       </mesh>
 
       <Html

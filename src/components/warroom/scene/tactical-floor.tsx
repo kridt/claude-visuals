@@ -1,15 +1,13 @@
 'use client';
 
 import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
 /**
- * Floor: dark plane with a steel-blue grid helper plus a custom shader
+ * Floor: PBR-reflective plane (bounces IBL/Lightformers for that
+ * wet-bunker look) with a steel-blue grid helper and a custom shader
  * pass adding concentric range rings and a slow radar sweep.
- *
- * Faint, never showy — the globe is the centerpiece. The floor exists
- * to ground the eye and signal "tactical surface".
  */
 
 const FLOOR_VERT = /* glsl */ `
@@ -37,19 +35,19 @@ const FLOOR_FRAG = /* glsl */ `
     // Soft concentric rings every 1.0 world unit. Anti-aliased band.
     float ringPhase = fract(r);
     float ring = smoothstep(0.96, 1.0, ringPhase) + smoothstep(0.0, 0.04, ringPhase) * (1.0 - step(0.04, ringPhase));
-    float rings = ring * 0.18;
+    float rings = ring * 0.35;
 
     // Radar sweep: a thick ring whose radius grows from 1 to 8 then resets.
     float sweepR = mod(uTime * 0.9, 7.0) + 1.0;
-    float sweep = exp(-pow((r - sweepR) * 1.8, 2.0)) * 0.45;
-    // Fade sweep toward the outer edge.
+    float sweep = exp(-pow((r - sweepR) * 1.8, 2.0)) * 0.9;
     sweep *= smoothstep(8.5, 5.0, r);
 
     // Overall radial fade — center is brighter, far edge fades to black.
     float radial = smoothstep(12.0, 1.0, r);
 
     float intensity = (rings + sweep) * radial;
-    vec3 color = uColor * intensity;
+    // HDR scale so bloom catches the rings and sweep.
+    vec3 color = uColor * intensity * 1.6;
     float alpha = intensity * 0.85;
     gl_FragColor = vec4(color, alpha);
   }
@@ -67,41 +65,63 @@ export function TacticalFloor() {
     [],
   );
 
+  // Build a custom grid where the bright (main) lines are HDR cyan so
+  // bloom picks them up. GridHelper uses a vertex-color material and
+  // there's no clean way to set toneMapped via JSX, so we configure
+  // both materials in a layout-effect after mount.
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const apply = (m: THREE.LineBasicMaterial) => {
+      m.transparent = true;
+      m.opacity = 0.55;
+      m.toneMapped = false;
+      m.vertexColors = true;
+    };
+    const mat = grid.material;
+    if (Array.isArray(mat)) {
+      for (const m of mat) apply(m as THREE.LineBasicMaterial);
+    } else {
+      apply(mat as THREE.LineBasicMaterial);
+    }
+  }, []);
+
   useFrame((_, delta) => {
     if (matRef.current) {
       const t = matRef.current.uniforms.uTime;
       if (t) t.value += delta;
     }
-    if (gridRef.current) {
-      const mat = gridRef.current.material as
-        | THREE.LineBasicMaterial
-        | THREE.LineBasicMaterial[];
-      if (Array.isArray(mat)) {
-        for (const m of mat) {
-          m.transparent = true;
-          m.opacity = 0.35;
-        }
-      } else {
-        mat.transparent = true;
-        mat.opacity = 0.35;
-      }
-    }
   });
+
+  // HDR colors for the grid helper. GridHelper's first color is for the
+  // main axes/cross, the second is for the rest. We push the main color
+  // past 1.0 to make it bloom.
+  const gridArgs = useMemo<[number, number, THREE.Color, THREE.Color]>(
+    () => [
+      40,
+      40,
+      new THREE.Color(0.4, 1.6, 2.4),
+      new THREE.Color('#13283a'),
+    ],
+    [],
+  );
 
   return (
     <group position={[0, 0, 0]}>
-      {/* Solid dark plane so the floor reads as a surface, not a void. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+      {/* Polished tactical-bunker floor. PBR plane that bounces the
+          lightformers for cinematic specular streaks. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[40, 40, 1, 1]} />
-        <meshBasicMaterial color={'#0a1220'} />
+        <meshPhysicalMaterial
+          color={'#040a16'}
+          metalness={0.85}
+          roughness={0.4}
+          envMapIntensity={0.6}
+        />
       </mesh>
 
       {/* Wireframe grid. */}
-      <gridHelper
-        ref={gridRef}
-        args={[40, 40, '#2a4860', '#13283a']}
-        position={[0, 0.001, 0]}
-      />
+      <gridHelper ref={gridRef} args={gridArgs} position={[0, 0.001, 0]} />
 
       {/* Range rings + radar sweep shader plane on top of the grid. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
@@ -115,6 +135,7 @@ export function TacticalFloor() {
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}
+          toneMapped={false}
         />
       </mesh>
     </group>

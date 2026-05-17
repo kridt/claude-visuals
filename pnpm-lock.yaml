@@ -44,6 +44,9 @@ importers:
       open:
         specifier: ^10.1.0
         version: 10.2.0
+      postprocessing:
+        specifier: ^6.39.1
+        version: 6.39.1(three@0.184.0)
       react:
         specifier: ^19.1.0
         version: 19.2.6

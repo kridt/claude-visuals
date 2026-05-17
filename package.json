@@ -36,6 +36,7 @@
     "motion": "^12.0.0",
     "next": "^16.0.0",
     "open": "^10.1.0",
+    "postprocessing": "^6.39.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwind-merge": "^2.5.4",

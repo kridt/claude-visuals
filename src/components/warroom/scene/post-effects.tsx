@@ -1,21 +1,51 @@
 'use client';
 
-import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
+import {
+  Bloom,
+  BrightnessContrast,
+  ChromaticAberration,
+  EffectComposer,
+  HueSaturation,
+  N8AO,
+  Noise,
+  SMAA,
+  ToneMapping,
+  Vignette,
+} from '@react-three/postprocessing';
+import { BlendFunction, ToneMappingMode } from 'postprocessing';
 
 /**
- * Crisper post-processing than the bridge. Military readouts should
- * stay legible — lower bloom, harder vignette.
+ * Film-grade post pipeline. The Canvas runs in `flat` mode so this
+ * composer's ACES tone mapping is authoritative.
  */
 export function PostEffects() {
   return (
     <EffectComposer multisampling={0}>
-      <Bloom
-        intensity={0.5}
-        luminanceThreshold={0.4}
-        luminanceSmoothing={0.35}
-        mipmapBlur
+      <N8AO
+        aoRadius={0.4}
+        intensity={1.9}
+        aoSamples={12}
+        denoiseSamples={4}
+        color="black"
       />
-      <Vignette eskil={false} offset={0.15} darkness={0.7} />
+      <Bloom
+        intensity={0.95}
+        luminanceThreshold={0.78}
+        luminanceSmoothing={0.5}
+        mipmapBlur
+        radius={0.75}
+      />
+      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      <ChromaticAberration
+        offset={[0.001, 0.0005]}
+        radialModulation={false}
+        modulationOffset={0}
+      />
+      <BrightnessContrast brightness={-0.04} contrast={0.22} />
+      <HueSaturation saturation={0.08} hue={-0.02} />
+      <Vignette eskil={false} offset={0.25} darkness={0.65} />
+      <Noise premultiply blendFunction={BlendFunction.OVERLAY} opacity={0.22} />
+      <SMAA />
     </EffectComposer>
   );
 }

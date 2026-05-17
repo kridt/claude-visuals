@@ -1,7 +1,7 @@
 'use client';
 
+import { Float } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { Float, Line } from '@react-three/drei';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { ToolCategory } from '@/lib/events/schema';
@@ -17,14 +17,50 @@ interface Props {
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-function buildOrbitPoints(radius: number, segments = 96): THREE.Vector3[] {
-  const pts: THREE.Vector3[] = [];
-  for (let i = 0; i <= segments; i++) {
+function buildOrbitSegmentGeometry(
+  radius: number,
+  segments = 96,
+): THREE.BufferGeometry {
+  // lineSegments wants pairs (a,b)(b,c)(c,d)… — emit them explicitly.
+  const positions = new Float32Array(segments * 2 * 3);
+  for (let i = 0; i < segments; i++) {
     const a = (i / segments) * Math.PI * 2;
-    pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
+    const b = ((i + 1) / segments) * Math.PI * 2;
+    const o = i * 6;
+    positions[o + 0] = Math.cos(a) * radius;
+    positions[o + 1] = 0;
+    positions[o + 2] = Math.sin(a) * radius;
+    positions[o + 3] = Math.cos(b) * radius;
+    positions[o + 4] = 0;
+    positions[o + 5] = Math.sin(b) * radius;
   }
-  return pts;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  return geo;
 }
+
+const HALO_VERT = /* glsl */ `
+  varying vec3 vNormal;
+  varying vec3 vViewPos;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vViewPos = -mv.xyz;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const HALO_FRAG = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  varying vec3 vNormal;
+  varying vec3 vViewPos;
+  void main() {
+    vec3 V = normalize(vViewPos);
+    float fres = pow(1.0 - max(dot(V, vNormal), 0.0), 2.0);
+    gl_FragColor = vec4(uColor * fres * 1.8, fres * uOpacity);
+  }
+`;
 
 export function SubagentSatellite({
   index,
@@ -35,7 +71,6 @@ export function SubagentSatellite({
   const planeRef = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
   const matRef = useRef<THREE.MeshStandardMaterial>(null);
-  const haloRef = useRef<THREE.MeshBasicMaterial>(null);
 
   const radius = 2.4 + (index % 4) * 0.35;
   const speed = 0.35 + ((index * 0.13) % 0.6);
@@ -43,10 +78,18 @@ export function SubagentSatellite({
   const tiltX = ((index * GOLDEN_ANGLE) % Math.PI) - Math.PI / 2;
   const tiltZ = ((index * GOLDEN_ANGLE * 1.7) % Math.PI) - Math.PI / 2;
 
-  const orbitPoints = useMemo(() => buildOrbitPoints(radius), [radius]);
+  const orbitGeometry = useMemo(
+    () => buildOrbitSegmentGeometry(radius),
+    [radius],
+  );
   const colorHex = TOOL_COLOR[toolCategory];
   const color = useMemo(() => new THREE.Color(colorHex), [colorHex]);
   const targetColor = useMemo(() => new THREE.Color(colorHex), [colorHex]);
+
+  const haloUniforms = useRef({
+    uColor: { value: new THREE.Color(colorHex) },
+    uOpacity: { value: 1 },
+  });
 
   const aliveSinceRef = useRef<number>(bornAt);
   const dyingSinceRef = useRef<number | null>(null);
@@ -67,9 +110,7 @@ export function SubagentSatellite({
       matRef.current.color.copy(color);
       matRef.current.emissive.copy(color);
     }
-    if (haloRef.current) {
-      haloRef.current.color.copy(color);
-    }
+    haloUniforms.current.uColor.value.copy(color);
 
     const t = state.clock.elapsedTime;
     const angle = phase + t * speed;
@@ -111,41 +152,41 @@ export function SubagentSatellite({
       matRef.current.opacity = deathOpacity;
       matRef.current.transparent = deathOpacity < 1;
     }
-    if (haloRef.current) {
-      haloRef.current.opacity = 0.18 * deathOpacity;
-    }
+    haloUniforms.current.uOpacity.value = deathOpacity;
   });
 
   return (
     <group ref={planeRef}>
-      <Line
-        points={orbitPoints}
-        color={colorHex}
-        lineWidth={0.6}
-        dashed
-        dashSize={0.18}
-        gapSize={0.12}
-        transparent
-        opacity={0.35}
-      />
+      <lineSegments geometry={orbitGeometry}>
+        <lineBasicMaterial
+          color={colorHex}
+          toneMapped={false}
+          transparent
+          opacity={0.55}
+        />
+      </lineSegments>
       <Float speed={1.4} rotationIntensity={0.2} floatIntensity={0.35}>
         <group ref={bodyRef}>
           <mesh>
-            <sphereGeometry args={[0.35, 32, 32]} />
+            <sphereGeometry args={[0.35, 64, 64]} />
             <meshStandardMaterial
               ref={matRef}
-              emissiveIntensity={1.2}
+              emissiveIntensity={2.5}
               roughness={0.3}
               metalness={0.1}
+              toneMapped={false}
             />
           </mesh>
-          <mesh scale={1.8}>
-            <sphereGeometry args={[0.35, 24, 24]} />
-            <meshBasicMaterial
-              ref={haloRef}
+          {/* Fresnel halo replaces the flat opacity sphere — additive + bloom = soft glow */}
+          <mesh scale={1.25}>
+            <sphereGeometry args={[0.35, 32, 32]} />
+            <shaderMaterial
               transparent
-              opacity={0.18}
               depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              vertexShader={HALO_VERT}
+              fragmentShader={HALO_FRAG}
+              uniforms={haloUniforms.current}
             />
           </mesh>
           <pointLight color={colorHex} intensity={1.6} distance={2} decay={2} />

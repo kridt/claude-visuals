@@ -8,10 +8,9 @@ interface RingProps {
   radius: number;
   opacity: number;
   segments?: number;
-  color?: string;
 }
 
-function Ring({ radius, opacity, segments = 96, color = '#7cd2ea' }: RingProps) {
+function Ring({ radius, opacity, segments = 96 }: RingProps) {
   const points = useMemo(() => {
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i <= segments; i++) {
@@ -21,6 +20,9 @@ function Ring({ radius, opacity, segments = 96, color = '#7cd2ea' }: RingProps) 
     return pts;
   }, [radius, segments]);
 
+  // HDR cyan so all rings glow as a cohesive set under bloom.
+  const color = useMemo(() => new THREE.Color(0.4, 1.8, 2.4), []);
+
   return (
     <Line
       points={points}
@@ -28,6 +30,7 @@ function Ring({ radius, opacity, segments = 96, color = '#7cd2ea' }: RingProps) 
       lineWidth={1.0}
       transparent
       opacity={opacity}
+      toneMapped={false}
     />
   );
 }
@@ -40,10 +43,10 @@ function Ring({ radius, opacity, segments = 96, color = '#7cd2ea' }: RingProps) 
 export function RangeRings() {
   return (
     <group position={[0, 0.012, 0]}>
-      <Ring radius={2} opacity={0.55} />
-      <Ring radius={4} opacity={0.4} />
-      <Ring radius={6} opacity={0.25} />
-      <Ring radius={8} opacity={0.15} />
+      <Ring radius={2} opacity={0.65} />
+      <Ring radius={4} opacity={0.5} />
+      <Ring radius={6} opacity={0.35} />
+      <Ring radius={8} opacity={0.2} />
     </group>
   );
 }

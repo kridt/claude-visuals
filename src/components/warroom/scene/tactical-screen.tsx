@@ -1,6 +1,6 @@
 'use client';
 
-import { Html, Text } from '@react-three/drei';
+import { Html, RoundedBox, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef, type ReactNode } from 'react';
 import * as THREE from 'three';
@@ -32,12 +32,12 @@ function Bracket({ position, rotation, size, thickness = 0.025 }: BracketProps) 
       {/* Horizontal arm — extends in +X from the corner anchor. */}
       <mesh position={[size / 2, 0, 0]}>
         <boxGeometry args={[size, thickness, 0.02]} />
-        <meshBasicMaterial color={'#7cd2ea'} toneMapped={false} />
+        <meshBasicMaterial color={[0.8, 3.5, 5]} toneMapped={false} />
       </mesh>
       {/* Vertical arm — extends in +Y from the corner anchor. */}
       <mesh position={[0, size / 2, 0]}>
         <boxGeometry args={[thickness, size, 0.02]} />
-        <meshBasicMaterial color={'#7cd2ea'} toneMapped={false} />
+        <meshBasicMaterial color={[0.8, 3.5, 5]} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -62,7 +62,7 @@ const SCANLINE_FRAG = /* glsl */ `
   void main() {
     // 220 lines across the whole height, scrolling slowly.
     float lines = sin((vUv.y * uHeight * 220.0) + uTime * 0.6);
-    float scan = smoothstep(0.6, 1.0, lines) * 0.05;
+    float scan = smoothstep(0.6, 1.0, lines) * 0.04;
     // Soft vertical fade toward the top and bottom edges.
     float edge = smoothstep(0.0, 0.05, vUv.y) * smoothstep(1.0, 0.95, vUv.y);
     gl_FragColor = vec4(vec3(0.49, 0.82, 0.92), scan * edge);
@@ -70,9 +70,9 @@ const SCANLINE_FRAG = /* glsl */ `
 `;
 
 /**
- * War-room screen: sharper than the bridge holopanel. Solid label bar
- * at the top, tactical brackets at corners, thin top/bottom rails (no
- * left/right borders), subtle CRT scanlines, and an HTML transform slot.
+ * War-room screen: chamfered PBR backplate, bloomed cyan caption rail,
+ * tactical corner brackets, subtle CRT scanlines, and an HTML transform
+ * slot.
  */
 export function TacticalScreen({
   position,
@@ -106,7 +106,7 @@ export function TacticalScreen({
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const pulse = 0.55 + Math.sin(t * 0.8) * 0.15;
+    const pulse = 0.6 + Math.sin(t * 0.8) * 0.2;
     if (railTopRef.current) railTopRef.current.opacity = pulse;
     if (railBotRef.current) railBotRef.current.opacity = pulse;
     if (scanMatRef.current) {
@@ -117,20 +117,25 @@ export function TacticalScreen({
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>
-      {/* Solid backplane — opaque dark navy. */}
-      <mesh position={[0, 0, -0.03]}>
-        <planeGeometry args={[width, height]} />
-        <meshBasicMaterial
-          color={'#0a1626'}
-          transparent
-          opacity={0.92}
-          depthWrite={false}
-          side={THREE.DoubleSide}
+      {/* Chamfered PBR backplate. */}
+      <RoundedBox
+        args={[width, height, 0.04]}
+        radius={0.02}
+        smoothness={3}
+        position={[0, 0, -0.03]}
+      >
+        <meshPhysicalMaterial
+          color={'#0a121e'}
+          metalness={0.7}
+          roughness={0.4}
+          clearcoat={0.6}
+          clearcoatRoughness={0.3}
+          envMapIntensity={0.8}
         />
-      </mesh>
+      </RoundedBox>
 
       {/* CRT scanline overlay. */}
-      <mesh position={[0, 0, -0.025]}>
+      <mesh position={[0, 0, -0.005]}>
         <planeGeometry args={[width, height]} />
         <shaderMaterial
           ref={scanMatRef}
@@ -143,13 +148,13 @@ export function TacticalScreen({
         />
       </mesh>
 
-      {/* Top label bar — solid cyan rectangle. */}
-      <mesh position={[0, labelBarY, -0.015]}>
+      {/* Top label bar — HDR cyan so bloom hugs it. */}
+      <mesh position={[0, labelBarY, 0.002]}>
         <planeGeometry args={[width, labelBarHeight]} />
-        <meshBasicMaterial color={'#7cd2ea'} toneMapped={false} />
+        <meshBasicMaterial color={[1, 5, 7]} toneMapped={false} />
       </mesh>
       <Text
-        position={[-hw + 0.12, labelBarY, -0.005]}
+        position={[-hw + 0.12, labelBarY, 0.008]}
         fontSize={0.085}
         color={'#0a1626'}
         anchorX="left"
@@ -160,25 +165,25 @@ export function TacticalScreen({
         {label}
       </Text>
 
-      {/* Top and bottom rails (no side borders). */}
-      <mesh position={[0, hh - labelBarHeight - 0.01, -0.01]}>
+      {/* Top and bottom accent rails (no side borders). */}
+      <mesh position={[0, hh - labelBarHeight - 0.01, 0.002]}>
         <planeGeometry args={[width, 0.018]} />
         <meshBasicMaterial
           ref={railTopRef}
-          color={'#7cd2ea'}
+          color={[0.8, 3.5, 5]}
           transparent
-          opacity={0.7}
+          opacity={0.8}
           depthWrite={false}
           toneMapped={false}
         />
       </mesh>
-      <mesh position={[0, -hh + 0.01, -0.01]}>
+      <mesh position={[0, -hh + 0.01, 0.002]}>
         <planeGeometry args={[width, 0.018]} />
         <meshBasicMaterial
           ref={railBotRef}
-          color={'#7cd2ea'}
+          color={[0.8, 3.5, 5]}
           transparent
-          opacity={0.7}
+          opacity={0.8}
           depthWrite={false}
           toneMapped={false}
         />

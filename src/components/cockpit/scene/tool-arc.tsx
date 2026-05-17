@@ -1,7 +1,7 @@
 'use client';
 
-import { useFrame } from '@react-three/fiber';
 import { QuadraticBezierLine } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef, type Ref } from 'react';
 import * as THREE from 'three';
 import type { ToolCategory } from '@/lib/events/schema';
@@ -19,6 +19,8 @@ interface BezierRef {
     opacity?: number;
     dashOffset?: number;
     needsUpdate?: boolean;
+    color?: THREE.Color;
+    toneMapped?: boolean;
   };
 }
 
@@ -41,8 +43,15 @@ function seededEndpoint(seed: string): THREE.Vector3 {
   );
 }
 
+// Push channel values past 1.0 so the Bloom threshold catches the arc.
+function hdrColorFromHex(hex: number, gain = 2.5): THREE.Color {
+  return new THREE.Color(hex).multiplyScalar(gain);
+}
+
 export function ToolArc({ id, toolCategory, bornAt, doneAt }: Props) {
   const colorHex = TOOL_COLOR[toolCategory];
+  const hdrColor = useMemo(() => hdrColorFromHex(colorHex, 2.5), [colorHex]);
+  const hdrTipColor = useMemo(() => hdrColorFromHex(colorHex, 3.0), [colorHex]);
 
   const endpoint = useMemo(() => seededEndpoint(id), [id]);
   const midpoint = useMemo(() => {
@@ -54,6 +63,7 @@ export function ToolArc({ id, toolCategory, bornAt, doneAt }: Props) {
   const lineRef = useRef<unknown>(null);
   const tipRef = useRef<THREE.Mesh>(null);
   const tipMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const lineColorAppliedRef = useRef(false);
 
   const completionRef = useRef<number | null>(doneAt);
   if (completionRef.current !== doneAt) {
@@ -64,6 +74,14 @@ export function ToolArc({ id, toolCategory, bornAt, doneAt }: Props) {
     const ref = lineRef.current as BezierRef | null;
     if (!ref?.material) return;
     const mat = ref.material;
+
+    // Apply HDR + toneMapped=false once the Line2 material exists (after first frame).
+    if (!lineColorAppliedRef.current && mat.color) {
+      mat.color.copy(hdrColor);
+      mat.toneMapped = false;
+      mat.needsUpdate = true;
+      lineColorAppliedRef.current = true;
+    }
 
     const ageMs = performance.now() - bornAt;
     const spawnP = Math.min(1, ageMs / 280);
@@ -115,10 +133,11 @@ export function ToolArc({ id, toolCategory, bornAt, doneAt }: Props) {
         <sphereGeometry args={[1, 16, 16]} />
         <meshBasicMaterial
           ref={tipMatRef}
-          color={colorHex}
+          color={hdrTipColor}
           transparent
           opacity={0.8}
           depthWrite={false}
+          toneMapped={false}
         />
       </mesh>
     </group>
