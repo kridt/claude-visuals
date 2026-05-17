@@ -1,0 +1,333 @@
+import {
+  NormalizedEvent,
+  RawAssistantLine,
+  RawLine,
+  RawSystemLine,
+  RawUserLine,
+} from "@/lib/events/schema";
+import { truncate } from "@/lib/utils";
+
+type Json = unknown;
+
+function safeStringify(value: Json): string {
+  try {
+    if (typeof value === "string") return value;
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function asAgent(isSidechain: boolean | undefined): "main" | "subagent" {
+  return isSidechain === true ? "subagent" : "main";
+}
+
+function makeId(
+  sessionId: string,
+  sourceUuid: string | undefined,
+  blockIndex: number,
+  kind: string,
+): string {
+  const u = sourceUuid ?? "_";
+  return `${sessionId}:${u}:${blockIndex}:${kind}`;
+}
+
+function pickTimestamp(raw: { timestamp?: string }): string {
+  return raw.timestamp ?? new Date().toISOString();
+}
+
+function normalizeUser(raw: RawUserLine): NormalizedEvent[] {
+  const out: NormalizedEvent[] = [];
+  const sessionId = raw.sessionId;
+  const sourceUuid = raw.uuid;
+  const timestamp = pickTimestamp(raw);
+  const agent = asAgent(raw.isSidechain);
+  const base = {
+    sessionId,
+    agent,
+    timestamp,
+    parentUuid: raw.parentUuid ?? null,
+    sourceUuid,
+    cwd: raw.cwd,
+    gitBranch: raw.gitBranch,
+  } as const;
+
+  const content = raw.message.content;
+
+  if (typeof content === "string") {
+    if (content.length > 0) {
+      out.push({
+        ...base,
+        kind: "user_message",
+        id: makeId(sessionId, sourceUuid, 0, "user_message"),
+        text: content,
+      });
+    }
+    return out;
+  }
+
+  let i = 0;
+  for (const block of content) {
+    if (block.type === "text") {
+      if (block.text.length > 0) {
+        out.push({
+          ...base,
+          kind: "user_message",
+          id: makeId(sessionId, sourceUuid, i, "user_message"),
+          text: block.text,
+        });
+      }
+    } else if (block.type === "tool_result") {
+      const c = block.content;
+      let preview: string | undefined;
+      if (typeof c === "string") {
+        preview = truncate(c, 240);
+      } else if (Array.isArray(c)) {
+        const text = c
+          .map((part) => {
+            if (
+              part &&
+              typeof part === "object" &&
+              (part as { type?: unknown }).type === "text" &&
+              typeof (part as { text?: unknown }).text === "string"
+            ) {
+              return (part as { text: string }).text;
+            }
+            return "";
+          })
+          .join("");
+        preview = truncate(text, 240);
+      } else if (c !== undefined) {
+        preview = truncate(safeStringify(c), 240);
+      }
+      out.push({
+        ...base,
+        kind: "tool_result",
+        id: makeId(sessionId, sourceUuid, i, "tool_result"),
+        toolUseId: block.tool_use_id,
+        isError: block.is_error,
+        output: c,
+        outputPreview: preview,
+      });
+    }
+    i += 1;
+  }
+  return out;
+}
+
+function normalizeAssistant(raw: RawAssistantLine): NormalizedEvent[] {
+  const out: NormalizedEvent[] = [];
+  const sessionId = raw.sessionId;
+  const sourceUuid = raw.uuid;
+  const timestamp = pickTimestamp(raw);
+  const agent = asAgent(raw.isSidechain);
+  const model = raw.message.model;
+  const stopReason = raw.message.stop_reason ?? null;
+  const base = {
+    sessionId,
+    agent,
+    timestamp,
+    parentUuid: raw.parentUuid ?? null,
+    sourceUuid,
+    cwd: raw.cwd,
+    gitBranch: raw.gitBranch,
+  } as const;
+
+  let i = 0;
+  for (const block of raw.message.content) {
+    if (block.type === "text") {
+      if (block.text.length > 0) {
+        out.push({
+          ...base,
+          kind: "assistant_text",
+          id: makeId(sessionId, sourceUuid, i, "assistant_text"),
+          model,
+          text: block.text,
+          stopReason,
+        });
+      }
+    } else if (block.type === "thinking") {
+      const text = block.thinking;
+      if (text.length > 0) {
+        out.push({
+          ...base,
+          kind: "assistant_thinking",
+          id: makeId(sessionId, sourceUuid, i, "assistant_thinking"),
+          model,
+          text,
+        });
+      }
+    } else if (block.type === "tool_use") {
+      const inputPreview = truncate(safeStringify(block.input), 240);
+      out.push({
+        ...base,
+        kind: "tool_use",
+        id: makeId(sessionId, sourceUuid, i, "tool_use"),
+        toolUseId: block.id,
+        toolName: block.name,
+        input: block.input,
+        inputPreview,
+      });
+    }
+    i += 1;
+  }
+
+  const usage = raw.message.usage;
+  if (usage && typeof usage.input_tokens === "number") {
+    out.push({
+      ...base,
+      kind: "usage",
+      id: makeId(sessionId, sourceUuid, i, "usage"),
+      model,
+      inputTokens: usage.input_tokens ?? 0,
+      outputTokens: usage.output_tokens ?? 0,
+      cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+    });
+  }
+
+  return out;
+}
+
+function normalizeSystem(raw: RawSystemLine): NormalizedEvent[] {
+  const out: NormalizedEvent[] = [];
+  const o = raw as unknown as Record<string, unknown>;
+  const subtype = typeof o.subtype === "string" ? o.subtype : undefined;
+  const hookName =
+    typeof o.hookName === "string" ? o.hookName : undefined;
+  const hookEvent =
+    typeof o.hookEvent === "string" ? o.hookEvent : undefined;
+  if (subtype === "hook" || hookName || hookEvent) {
+    out.push({
+      sessionId: raw.sessionId,
+      agent: asAgent(raw.isSidechain),
+      timestamp: pickTimestamp(raw),
+      parentUuid: raw.parentUuid ?? null,
+      sourceUuid: raw.uuid,
+      cwd: raw.cwd,
+      gitBranch: raw.gitBranch,
+      kind: "hook",
+      id: makeId(raw.sessionId, raw.uuid, 0, "hook"),
+      hook: hookName ?? hookEvent ?? subtype ?? "system",
+      payload: o,
+    });
+  }
+  return out;
+}
+
+function normalizeMeta(
+  raw: Record<string, unknown> & { sessionId: string; type: string },
+): NormalizedEvent[] {
+  const sessionId = raw.sessionId;
+  const t = raw.type;
+  const timestamp =
+    typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString();
+  const base = {
+    sessionId,
+    agent: "main" as const,
+    timestamp,
+    parentUuid: null,
+    sourceUuid: typeof raw.uuid === "string" ? raw.uuid : undefined,
+  };
+
+  if (t === "ai-title") {
+    const title =
+      typeof raw.title === "string"
+        ? raw.title
+        : typeof raw.aiTitle === "string"
+          ? raw.aiTitle
+          : undefined;
+    if (!title) return [];
+    return [
+      {
+        ...base,
+        kind: "session_meta",
+        id: makeId(sessionId, base.sourceUuid, 0, "session_meta:title"),
+        field: "title",
+        value: title,
+      },
+    ];
+  }
+
+  if (t === "permission-mode") {
+    const mode =
+      typeof raw.permissionMode === "string" ? raw.permissionMode : undefined;
+    if (!mode) return [];
+    return [
+      {
+        ...base,
+        kind: "session_meta",
+        id: makeId(sessionId, base.sourceUuid, 0, "session_meta:permission"),
+        field: "permission-mode",
+        value: mode,
+      },
+    ];
+  }
+
+  return [];
+}
+
+export function parseLine(rawLine: string): NormalizedEvent[] {
+  const line = rawLine.replace(/^﻿/, "").trim();
+  if (line.length === 0) return [];
+
+  let json: unknown;
+  try {
+    json = JSON.parse(line);
+  } catch (err) {
+    console.warn("[parser] JSON parse failed:", (err as Error).message);
+    return [];
+  }
+
+  if (json === null || typeof json !== "object") return [];
+  const obj = json as Record<string, unknown>;
+
+  const t = obj.type;
+  if (
+    t === "last-prompt" ||
+    t === "bridge-session" ||
+    t === "queue-operation" ||
+    t === "attachment" ||
+    t === "file-history-snapshot"
+  ) {
+    return [];
+  }
+
+  const parsed = RawLine.safeParse(json);
+  if (!parsed.success) {
+    if (
+      t === "ai-title" ||
+      t === "permission-mode" ||
+      t === "user" ||
+      t === "assistant" ||
+      t === "system"
+    ) {
+      console.warn("[parser] schema mismatch for type", t, parsed.error.issues[0]?.message);
+    }
+    return [];
+  }
+
+  const raw = parsed.data;
+  switch (raw.type) {
+    case "user":
+      return normalizeUser(raw);
+    case "assistant":
+      return normalizeAssistant(raw);
+    case "system":
+      return normalizeSystem(raw);
+    case "ai-title":
+    case "permission-mode":
+      return normalizeMeta(raw as unknown as Record<string, unknown> & { sessionId: string; type: string });
+    default:
+      return [];
+  }
+}
+
+export function parseAndYield(rawLines: string[]): NormalizedEvent[] {
+  const events: NormalizedEvent[] = [];
+  for (const line of rawLines) {
+    const parsed = parseLine(line);
+    for (const ev of parsed) events.push(ev);
+  }
+  return events;
+}
