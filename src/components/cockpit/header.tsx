@@ -8,6 +8,7 @@ interface Props {
   connected: boolean;
   sessionCount: number;
   activeCount: number;
+  onOpenPalette?(): void;
 }
 
 function Logo() {
@@ -82,7 +83,13 @@ function Clock() {
   );
 }
 
-export function Header({ connected, sessionCount, activeCount }: Props) {
+export function Header({
+  connected,
+  sessionCount,
+  activeCount,
+  onOpenPalette,
+}: Props) {
+  const hasActive = activeCount > 0;
   return (
     <div className="relative">
       <div className="flex items-center justify-between gap-6 px-6 py-4">
@@ -98,21 +105,92 @@ export function Header({ connected, sessionCount, activeCount }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center gap-5">
-          <div className="hidden items-center gap-2 md:flex">
-            <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-[var(--color-text-dim)]">
-              Sessions
-            </span>
-            <span className="font-mono text-[14px] tabular-nums text-[var(--color-text)]">
-              {sessionCount}
-            </span>
-            <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-[var(--color-text-dim)]">
-              · Active
-            </span>
-            <span className="font-mono text-[14px] tabular-nums text-[var(--color-success)]">
-              {activeCount}
-            </span>
+        <div className="flex items-center gap-4">
+          <div className="hidden items-center gap-3 md:flex">
+            <div
+              className="relative inline-flex items-center gap-2 rounded-full border px-3 py-1"
+              style={{
+                borderColor: hasActive
+                  ? 'color-mix(in oklch, var(--color-success) 38%, transparent)'
+                  : 'var(--color-border)',
+                background: hasActive
+                  ? 'color-mix(in oklch, var(--color-success) 8%, transparent)'
+                  : 'color-mix(in oklch, var(--color-surface) 40%, transparent)',
+              }}
+            >
+              {hasActive ? (
+                <motion.span
+                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  style={{ background: 'var(--color-success)' }}
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{
+                    duration: 1.8,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                  }}
+                />
+              ) : (
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  style={{ background: 'var(--color-text-dim)' }}
+                />
+              )}
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-dim)]">
+                Active
+              </span>
+              <span
+                className="font-mono text-[14px] font-semibold tabular-nums"
+                style={{
+                  color: hasActive
+                    ? 'var(--color-success)'
+                    : 'var(--color-text-muted)',
+                }}
+              >
+                {activeCount}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-dim)]">
+                Total
+              </span>
+              <span className="font-mono text-[13px] tabular-nums text-[var(--color-text-muted)]">
+                {sessionCount}
+              </span>
+            </div>
           </div>
+
+          {onOpenPalette ? (
+            <button
+              type="button"
+              onClick={onOpenPalette}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5',
+                'font-mono text-[10.5px] uppercase tracking-[0.22em]',
+                'text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
+                'transition-colors duration-200',
+              )}
+              style={{
+                borderColor: 'var(--color-border)',
+                background:
+                  'color-mix(in oklch, var(--color-surface) 50%, transparent)',
+              }}
+              title="Switch session (Cmd+K)"
+            >
+              <span>Switch</span>
+              <span
+                className="inline-flex items-center gap-0.5 rounded border px-1 py-px font-mono text-[9.5px]"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  background:
+                    'color-mix(in oklch, var(--color-bg) 60%, transparent)',
+                }}
+              >
+                <span>⌘</span>
+                <span>K</span>
+              </span>
+            </button>
+          ) : null}
 
           <div
             className={cn(

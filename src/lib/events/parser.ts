@@ -47,6 +47,31 @@ function pickTimestamp(raw: { timestamp?: string }): string {
   return raw.timestamp ?? new Date().toISOString();
 }
 
+type TextBlk = { type: "text"; text: string };
+type ThinkBlk = { type: "thinking"; thinking?: string; signature?: string };
+type ToolUseBlk = { type: "tool_use"; id: string; name: string; input?: unknown };
+type ToolResultBlk = {
+  type: "tool_result";
+  tool_use_id: string;
+  content?: unknown;
+  is_error?: boolean;
+};
+
+function isText(b: { type: string }): b is TextBlk {
+  return b.type === "text" && typeof (b as Record<string, unknown>).text === "string";
+}
+function isThinking(b: { type: string }): b is ThinkBlk {
+  return b.type === "thinking";
+}
+function isToolUse(b: { type: string }): b is ToolUseBlk {
+  const o = b as Record<string, unknown>;
+  return b.type === "tool_use" && typeof o.id === "string" && typeof o.name === "string";
+}
+function isToolResult(b: { type: string }): b is ToolResultBlk {
+  const o = b as Record<string, unknown>;
+  return b.type === "tool_result" && typeof o.tool_use_id === "string";
+}
+
 function normalizeUser(raw: RawUserLine): NormalizedEvent[] {
   const out: NormalizedEvent[] = [];
   const sessionId = raw.sessionId;
@@ -79,7 +104,7 @@ function normalizeUser(raw: RawUserLine): NormalizedEvent[] {
 
   let i = 0;
   for (const block of content) {
-    if (block.type === "text") {
+    if (isText(block)) {
       if (block.text.length > 0) {
         out.push({
           ...base,
@@ -88,7 +113,7 @@ function normalizeUser(raw: RawUserLine): NormalizedEvent[] {
           text: block.text,
         });
       }
-    } else if (block.type === "tool_result") {
+    } else if (isToolResult(block)) {
       const c = block.content;
       let preview: string | undefined;
       if (typeof c === "string") {
@@ -146,7 +171,7 @@ function normalizeAssistant(raw: RawAssistantLine): NormalizedEvent[] {
 
   let i = 0;
   for (const block of raw.message.content) {
-    if (block.type === "text") {
+    if (isText(block)) {
       if (block.text.length > 0) {
         out.push({
           ...base,
@@ -157,8 +182,8 @@ function normalizeAssistant(raw: RawAssistantLine): NormalizedEvent[] {
           stopReason,
         });
       }
-    } else if (block.type === "thinking") {
-      const text = block.thinking;
+    } else if (isThinking(block)) {
+      const text = block.thinking ?? "";
       if (text.length > 0) {
         out.push({
           ...base,
@@ -168,7 +193,7 @@ function normalizeAssistant(raw: RawAssistantLine): NormalizedEvent[] {
           text,
         });
       }
-    } else if (block.type === "tool_use") {
+    } else if (isToolUse(block)) {
       const inputPreview = truncate(safeStringify(block.input), 240);
       out.push({
         ...base,
